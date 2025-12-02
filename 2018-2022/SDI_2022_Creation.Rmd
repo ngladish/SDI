@@ -186,7 +186,7 @@ colnames(RGC_SDI_2022_FA_SC) <- c("SDI_2022_Raw")
 identical(rownames(RGC_SDI_2022_FA_SC), RGC_SDI_2022_CT$GEOID)
 RGC_SDI_2022_FA_SC$SDI_2022 <- xtile(RGC_SDI_2022_FA_SC$SDI_2022_Raw, n = 100, wt = RGC_SDI_2022_CT$B01001_001)
 RGC_SDI_2022_FA_SC$GEOID <- rownames(RGC_SDI_2022_FA_SC)
-RGC_SDI_2022_CT <- plyr::join(RGC_SDI_2022_CT, RGC_SDI_2022_FA_SC, by = "GEOID") # Final is 83617
+RGC_SDI_2022_CT <- plyr::join(RGC_SDI_2022_CT, RGC_SDI_2022_FA_SC, by = "GEOID")
 save(RGC_SDI_2022_CT, file = "RGC_SDI_2022_CT.RData")
 ```
 
@@ -249,7 +249,7 @@ RGC_SDI_2022_FA_SC$SDI_2022 <- xtile(RGC_SDI_2022_FA_SC$SDI_2022_Raw, n = 100, w
 RGC_SDI_2022_FA_SC$GEOID <- rownames(RGC_SDI_2022_FA_SC)
 RGC_SDI_2022_C <- plyr::join(RGC_SDI_2022_C, RGC_SDI_2022_FA_SC, by = "GEOID")
 save(RGC_SDI_2022_C, file = "RGC_SDI_2022_C.RData")
-write.csv(RGC_SDI_2022_C, file = "RGC_SDI_2022_C.csv") # Final number is 3144
+write.csv(RGC_SDI_2022_C, file = "RGC_SDI_2022_C.csv")
 ```
 
 ### ZCTA
@@ -310,7 +310,7 @@ identical(rownames(RGC_SDI_2022_FA_SC), RGC_SDI_2022_ZCTA$GEOID)
 RGC_SDI_2022_FA_SC$SDI_2022 <- xtile(RGC_SDI_2022_FA_SC$SDI_2022_Raw, n = 100, wt = RGC_SDI_2022_ZCTA$B01001_001)
 RGC_SDI_2022_FA_SC$GEOID <- rownames(RGC_SDI_2022_FA_SC)
 RGC_SDI_2022_ZCTA <- plyr::join(RGC_SDI_2022_ZCTA, RGC_SDI_2022_FA_SC, by = "GEOID")
-save(RGC_SDI_2022_ZCTA, file = "RGC_SDI_2022_ZCTA.RData") # Final is 33,187
+save(RGC_SDI_2022_ZCTA, file = "RGC_SDI_2022_ZCTA.RData")
 write.csv(RGC_SDI_2022_ZCTA, file = "RGC_SDI_2022_ZCTA.csv")
 ```
 
