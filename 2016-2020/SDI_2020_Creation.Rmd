@@ -1,0 +1,386 @@
+---
+title: "SDI_2020"
+author: "Nicole Gladish"
+date: "2024-06-12"
+output: html_document
+---
+
+# Libraries 
+
+```{r}
+library(conflicted)
+library(tidyverse)
+library(censusapi)
+library(reshape2)
+library(plyr)
+library(openxlsx)
+library(readxl)
+library(tidycensus)
+library(dbplyr)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(viridis)
+library(corrplot)
+library(irr)
+library(ggrepel)
+library(ggmap)
+library(DT)
+library(knitr)
+library(psych)
+library(tigris)
+options(tigris_use_cache = TRUE)
+library(spdep)
+library(stringi)
+library(pals)
+library(haven)
+library(statar)
+library(zctaCrosswalk)
+library(sf)
+```
+
+# 2020
+
+## Accessing US Census Data
+
+Census block group cannot be made for the Robert Graham Center's version of the SDI as there are census tables used here which are not available.
+
+```{r}
+setwd("~/Desktop/SDVI/SDI/RGC SDI 2020")
+Sys.getenv("CENSUS_KEY") # to check that the API key is in the system
+states_removed <- c("60", "66", "69", "72", "74", "78") # These are the state numbers which won't be included
+states <- setdiff(unique(fips_codes$state_code), states_removed)
+
+SDI_Variables <- c(
+        "B01001_001",
+        "C17002_001", "C17002_002", "C17002_003",
+        "B15003_002", "B15003_003", "B15003_004", "B15003_005", "B15003_006", "B15003_007", "B15003_008", "B15003_009", "B15003_010", "B15003_011", "B15003_012", "B15003_013", "B15003_014", "B15003_015", "B15003_016", "B15003_001",
+        "B23001_008", "B23001_009", "B23001_015", "B23001_016", "B23001_022", "B23001_023", "B23001_029", "B23001_030", "B23001_036", "B23001_037", "B23001_043", "B23001_044", "B23001_050", "B23001_051", "B23001_057", "B23001_058", "B23001_064", "B23001_065", "B23001_071", "B23001_072", "B23001_094", "B23001_095", "B23001_101", "B23001_102", "B23001_108", "B23001_109", "B23001_115", "B23001_116", "B23001_122", "B23001_123", "B23001_129", "B23001_130", "B23001_136", "B23001_137", "B23001_143", "B23001_144", "B23001_150", "B23001_151", "B23001_157", "B23001_158", "B23001_006", "B23001_013", "B23001_020", "B23001_027", "B23001_034", "B23001_041", "B23001_048", "B23001_055", "B23001_062", "B23001_069", "B23001_092", "B23001_099", "B23001_106", "B23001_113",  "B23001_120", "B23001_127", "B23001_134", "B23001_141", "B23001_148", "B23001_155", 
+        "B25003_003", "B25003_001",
+        "B25014_005", "B25014_006", "B25014_007", "B25014_011", "B25014_012", "B25014_013", "B25014_001",
+        "B11003_010", "B11003_016", "B11003_001",
+        "B25044_010", "B25044_003", "B25044_001"
+      )
+
+# Census tract level
+RGC_SDI_2020_CT_Raw <- do.call(rbind, lapply(1:length(states), function(x){
+   RGC_SDI_2020_CT_Raw <- get_acs(
+    year = 2020,
+    geography = "tract",
+    state = states[x],
+    key = Sys.getenv("CENSUS_KEY"),
+    variables = SDI_Variables)
+}))
+RGC_SDI_2020_CT_Raw <- dcast(RGC_SDI_2020_CT_Raw, GEOID + NAME ~ variable, value.var=c("estimate"))
+RGC_SDI_2020_CT_Raw <- RGC_SDI_2020_CT_Raw %>% separate(NAME, c("Tract", "County", "State"), sep = ",")
+sum(RGC_SDI_2020_CT_Raw$B01001_001 == 0) # 816 CTs removed due to having a population = 0
+RGC_SDI_2020_CT_Raw <- RGC_SDI_2020_CT_Raw[!RGC_SDI_2020_CT_Raw$B01001_001 == 0,] #83598
+save(RGC_SDI_2020_CT_Raw, file = "RGC_SDI_2020_CT_Raw.RData")
+
+# County level
+RGC_SDI_2020_C_Raw <- do.call(rbind, lapply(1:length(states), function(x){
+   RGC_SDI_2020_C_Raw <- get_acs(
+    year = 2020,
+    geography = "county",
+    state = states[x],
+    key = Sys.getenv("CENSUS_KEY"),
+    variables = SDI_Variables)
+}))
+RGC_SDI_2020_C_Raw <- dcast(RGC_SDI_2020_C_Raw, GEOID + NAME ~ variable, value.var=c("estimate"))
+RGC_SDI_2020_C_Raw <- RGC_SDI_2020_C_Raw %>% separate(NAME, c("County", "State"), sep = ",")
+sum(RGC_SDI_2020_C_Raw$B01001_001 == 0) # 0 counties removed due to having a population = 0
+RGC_SDI_2020_C_Raw <- RGC_SDI_2020_C_Raw[!RGC_SDI_2020_C_Raw$B01001_001 == 0,] 
+save(RGC_SDI_2020_C_Raw, file = "RGC_SDI_2020_C_Raw.RData")
+
+# ZCTA 32,774
+RGC_SDI_2020_ZCTA_Raw <- get_acs(
+    year = 2020,
+    geography = "zcta",
+    key = Sys.getenv("CENSUS_KEY"),
+    variables = SDI_Variables)
+RGC_SDI_2020_ZCTA_Raw <- dcast(RGC_SDI_2020_ZCTA_Raw, GEOID + NAME ~ variable, value.var=c("estimate"))
+sum(RGC_SDI_2020_ZCTA_Raw$B01001_001 == 0) # 816 ZCTAs removed due to having a population = 0
+RGC_SDI_2020_ZCTA_Raw <- RGC_SDI_2020_ZCTA_Raw[!RGC_SDI_2020_ZCTA_Raw$B01001_001 == 0,] #32,749
+save(RGC_SDI_2020_ZCTA_Raw, file = "RGC_SDI_2020_ZCTA_Raw.RData")
+```
+
+## Missing data assessment
+
+No data is missing.
+
+```{r}
+colSums(is.na(RGC_SDI_2020_CT_Raw))
+colSums(is.na(RGC_SDI_2020_C_Raw))
+colSums(is.na(RGC_SDI_2020_ZCTA_Raw))
+```
+
+## SDI Calculation
+
+<div class = "row">
+<div class = "col-md-4">
+|Area       |Pop = 0   |Remaining |
+|:----------|:---------|:---------|
+|CT         |816       |83,598    |
+|County     |0         |3,143     |
+|ZCTA       |816       |32,749    |
+</div>
+
+<div class = "col-md-8">
+</div>
+</div>
+
+### CT
+
+```{r}
+load("RGC_SDI_2020_CT_Raw.RData")
+
+# Producing the variables
+RGC_SDI_2020_CT <- dplyr::mutate(RGC_SDI_2020_CT_Raw,
+    POV_P = (C17002_002 + C17002_003)/C17002_001,
+    NOHSDP_P = (B15003_002 + B15003_003 + B15003_004 + B15003_005 + B15003_006 + B15003_007 + B15003_008 + B15003_009 + B15003_010 + B15003_011 + B15003_012 + B15003_013 + B15003_014 + B15003_015 + B15003_016) /B15003_001,
+    NONEMP_P = (B23001_008 + B23001_009 + B23001_015 + B23001_016 + B23001_022 + B23001_023 + B23001_029 + B23001_030 + B23001_036 + B23001_037 + B23001_043 + B23001_044 + B23001_050 + B23001_051 + B23001_057 + B23001_058 + B23001_064 + B23001_065 + B23001_071 + B23001_072 + B23001_094 + B23001_095 + B23001_101 + B23001_102 + B23001_108 + B23001_109 + B23001_115 + B23001_116 + B23001_122 + B23001_123 + B23001_129 + B23001_130 + B23001_136 + B23001_137 + B23001_143 + B23001_144 + B23001_150 + B23001_151 + B23001_157 + B23001_158)/ (B23001_006 + B23001_009 +  B23001_013 +  B23001_016 + B23001_020 + B23001_023 +  B23001_027 + B23001_030 + B23001_034 +  B23001_037 +  B23001_041 + B23001_044 + B23001_048 + B23001_051 +  B23001_055 + B23001_058 + B23001_062 + B23001_065 + B23001_069 + B23001_072 + B23001_092 + B23001_095 + B23001_099 + B23001_102 +  B23001_106 + B23001_109 + B23001_113 + B23001_116 + B23001_120 + B23001_123 + B23001_127 + B23001_130 + B23001_134 + B23001_137 + B23001_141 + B23001_144 + B23001_148 + B23001_151 + B23001_155 + B23001_158),
+    RENT_P = B25003_003/B25003_001,
+    CROWD_P = (B25014_005 + B25014_006 + B25014_007 + B25014_011 + B25014_012 + B25014_013)/B25014_001,
+    SNGPNT_P  = (B11003_010 + B11003_016)/B11003_001,
+    NOVEH_P = (B25044_010 + B25044_003)/B25044_001,
+) %>%
+  dplyr::select(GEOID, County, State, ends_with("P"), B01001_001
+) %>%
+  dplyr::select(
+    everything()
+  )
+
+# Imputation by replacing NAs with 0
+colSums(is.na(RGC_SDI_2020_CT)) # There are between 21-317 NAs
+RGC_SDI_2020_CT[is.na(RGC_SDI_2020_CT)] <- 0
+colSums(is.na(RGC_SDI_2020_CT))
+RGC_SDI_2020_CT_RawVars <- RGC_SDI_2020_CT
+save(RGC_SDI_2020_CT_RawVars, file = "RGC_SDI_2020_CT_RawVars.RData")
+
+# Transforming the variables into percentiles
+SDI_short <- RGC_SDI_2020_CT[, c("GEOID", "POV_P", "NOHSDP_P", "NONEMP_P", "RENT_P", "CROWD_P", "SNGPNT_P", "NOVEH_P")]
+rownames(SDI_short) <- SDI_short$GEOID
+SDI_short$GEOID <- NULL
+SDI_Scores <- as.data.frame(sapply(1:ncol(SDI_short), function(x){
+  var_score <- xtile(SDI_short[,x], n = 100, wt = RGC_SDI_2020_CT$B01001_001)
+}))
+colnames(SDI_Scores) <- c("POV", "NOHSDP", "NONEMP", "RENT", "CROWD", "SNGPNT", "NOVEH")
+rownames(SDI_Scores) <- rownames(SDI_short)
+
+# Factor analysis on the percentile data via the principal factor solution method is performed with a one factor solution to produce the SDI score.
+sdi.fa <- fa(SDI_Scores, nfactors = 1, fm = "pa", weight = RGC_SDI_2020_CT$B01001_001)
+sdi.fa$uniquenesses # Good to see if the variables year to year make sense to include.
+psych::alpha(SDI_Scores)
+# Saving the loadings
+RGC_2020_SDI_Loadings <- as.data.frame(loadings(sdi.fa)[])
+colnames(RGC_2020_SDI_Loadings) <- "CT"
+RGC_2020_SDI_Loadings$Vars <- rownames(RGC_2020_SDI_Loadings)
+RGC_2020_SDI_Loadings <- RGC_2020_SDI_Loadings[,c("Vars", "CT")]
+save(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.RData")
+
+# Pulling the raw scores as the raw SDI, producing the SDI on a scale of 0-100
+RGC_SDI_2020_FA_SC <- as.data.frame(sdi.fa$scores)
+colnames(RGC_SDI_2020_FA_SC) <- c("SDI_2020_Raw")
+identical(rownames(RGC_SDI_2020_FA_SC), RGC_SDI_2020_CT$GEOID)
+RGC_SDI_2020_FA_SC$SDI_2020 <- xtile(RGC_SDI_2020_FA_SC$SDI_2020_Raw, n = 100, wt = RGC_SDI_2020_CT$B01001_001)
+RGC_SDI_2020_FA_SC$GEOID <- rownames(RGC_SDI_2020_FA_SC)
+RGC_SDI_2020_CT <- plyr::join(RGC_SDI_2020_CT, RGC_SDI_2020_FA_SC, by = "GEOID") # Final is 83617
+save(RGC_SDI_2020_CT, file = "RGC_SDI_2020_CT.RData")
+```
+
+### C
+
+```{r}
+load("RGC_SDI_2020_C_Raw.RData")
+
+# Producing the variables
+RGC_SDI_2020_C <- dplyr::mutate(RGC_SDI_2020_C_Raw,
+    POV_P = (C17002_002 + C17002_003)/C17002_001,
+    NOHSDP_P = (B15003_002 + B15003_003 + B15003_004 + B15003_005 + B15003_006 + B15003_007 + B15003_008 + B15003_009 + B15003_010 + B15003_011 + B15003_012 + B15003_013 + B15003_014 + B15003_015 + B15003_016) /B15003_001,
+    NONEMP_P = (B23001_008 + B23001_009 + B23001_015 + B23001_016 + B23001_022 + B23001_023 + B23001_029 + B23001_030 + B23001_036 + B23001_037 + B23001_043 + B23001_044 + B23001_050 + B23001_051 + B23001_057 + B23001_058 + B23001_064 + B23001_065 + B23001_071 + B23001_072 + B23001_094 + B23001_095 + B23001_101 + B23001_102 + B23001_108 + B23001_109 + B23001_115 + B23001_116 + B23001_122 + B23001_123 + B23001_129 + B23001_130 + B23001_136 + B23001_137 + B23001_143 + B23001_144 + B23001_150 + B23001_151 + B23001_157 + B23001_158)/ (B23001_006 + B23001_009 +  B23001_013 +  B23001_016 + B23001_020 + B23001_023 +  B23001_027 + B23001_030 + B23001_034 +  B23001_037 +  B23001_041 + B23001_044 + B23001_048 + B23001_051 +  B23001_055 + B23001_058 + B23001_062 + B23001_065 + B23001_069 + B23001_072 + B23001_092 + B23001_095 + B23001_099 + B23001_102 +  B23001_106 + B23001_109 + B23001_113 + B23001_116 + B23001_120 + B23001_123 + B23001_127 + B23001_130 + B23001_134 + B23001_137 + B23001_141 + B23001_144 + B23001_148 + B23001_151 + B23001_155 + B23001_158),
+    RENT_P = B25003_003/B25003_001,
+    CROWD_P = (B25014_005 + B25014_006 + B25014_007 + B25014_011 + B25014_012 + B25014_013)/B25014_001,
+    SNGPNT_P  = (B11003_010 + B11003_016)/B11003_001,
+    NOVEH_P = (B25044_010 + B25044_003)/B25044_001,
+) %>%
+  dplyr::select(GEOID, County, State, ends_with("P"), B01001_001
+) %>%
+  dplyr::select(
+    everything()
+  )
+
+# Imputation by replacing NAs with 0
+colSums(is.na(RGC_SDI_2020_C)) # There are no NAs
+RGC_SDI_2020_C[is.na(RGC_SDI_2020_C)] <- 0
+colSums(is.na(RGC_SDI_2020_C))
+RGC_SDI_2020_C_RawVars <- RGC_SDI_2020_C
+save(RGC_SDI_2020_C_RawVars, file = "RGC_SDI_2020_C_RawVars.RData")
+
+# Transforming the variables into percentiles
+SDI_short <- RGC_SDI_2020_C[, c("GEOID", "POV_P", "NOHSDP_P", "NONEMP_P", "RENT_P", "CROWD_P", "SNGPNT_P", "NOVEH_P")]
+rownames(SDI_short) <- SDI_short$GEOID
+SDI_short$GEOID <- NULL
+SDI_Scores <- as.data.frame(sapply(1:ncol(SDI_short), function(x){
+  var_score <- xtile(SDI_short[,x], n = 100, wt = RGC_SDI_2020_C$B01001_001)
+}))
+colnames(SDI_Scores) <- c("POV", "NOHSDP", "NONEMP", "RENT", "CROWD", "SNGPNT", "NOVEH")
+rownames(SDI_Scores) <- rownames(SDI_short)
+
+# Factor analysis on the percentile data via the principal factor solution method is performed with a one factor solution to produce the SDI score.
+sdi.fa <- fa(SDI_Scores, nfactors = 1, fm = "pa", weight = RGC_SDI_2020_C$B01001_001)
+
+# Saving the loadings
+RGC_SDI_Loadings <- as.data.frame(loadings(sdi.fa)[])
+colnames(RGC_SDI_Loadings) <- "C"
+RGC_SDI_Loadings$Vars <- rownames(RGC_SDI_Loadings)
+RGC_SDI_Loadings <- RGC_SDI_Loadings[,c("Vars", "C")]
+load("RGC_2020_SDI_Loadings.RData")
+RGC_2020_SDI_Loadings <- plyr::join(RGC_2020_SDI_Loadings, RGC_SDI_Loadings)
+save(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.RData")
+write.csv(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.csv")
+
+# Pulling the raw scores as the raw SDI, producing the SDI on a scale of 0-100
+RGC_SDI_2020_FA_SC <- as.data.frame(sdi.fa$scores)
+colnames(RGC_SDI_2020_FA_SC) <- c("SDI_2020_Raw")
+identical(rownames(RGC_SDI_2020_FA_SC), RGC_SDI_2020_C$GEOID)
+RGC_SDI_2020_FA_SC$SDI_2020 <- xtile(RGC_SDI_2020_FA_SC$SDI_2020_Raw, n = 100, wt = RGC_SDI_2020_C$B01001_001)
+RGC_SDI_2020_FA_SC$GEOID <- rownames(RGC_SDI_2020_FA_SC)
+RGC_SDI_2020_C <- plyr::join(RGC_SDI_2020_C, RGC_SDI_2020_FA_SC, by = "GEOID")
+save(RGC_SDI_2020_C, file = "RGC_SDI_2020_C.RData")
+write.csv(RGC_SDI_2020_C, file = "RGC_SDI_2020_C.csv") # Final number is 3143
+```
+
+### ZCTA
+
+```{r}
+load("RGC_SDI_2020_ZCTA_Raw.RData")
+
+# Producing the variables
+RGC_SDI_2020_ZCTA <- dplyr::mutate(RGC_SDI_2020_ZCTA_Raw,
+    POV_P = (C17002_002 + C17002_003)/C17002_001,
+    NOHSDP_P = (B15003_002 + B15003_003 + B15003_004 + B15003_005 + B15003_006 + B15003_007 + B15003_008 + B15003_009 + B15003_010 + B15003_011 + B15003_012 + B15003_013 + B15003_014 + B15003_015 + B15003_016) /B15003_001,
+    NONEMP_P = (B23001_008 + B23001_009 + B23001_015 + B23001_016 + B23001_022 + B23001_023 + B23001_029 + B23001_030 + B23001_036 + B23001_037 + B23001_043 + B23001_044 + B23001_050 + B23001_051 + B23001_057 + B23001_058 + B23001_064 + B23001_065 + B23001_071 + B23001_072 + B23001_094 + B23001_095 + B23001_101 + B23001_102 + B23001_108 + B23001_109 + B23001_115 + B23001_116 + B23001_122 + B23001_123 + B23001_129 + B23001_130 + B23001_136 + B23001_137 + B23001_143 + B23001_144 + B23001_150 + B23001_151 + B23001_157 + B23001_158)/ (B23001_006 + B23001_009 +  B23001_013 +  B23001_016 + B23001_020 + B23001_023 +  B23001_027 + B23001_030 + B23001_034 +  B23001_037 +  B23001_041 + B23001_044 + B23001_048 + B23001_051 +  B23001_055 + B23001_058 + B23001_062 + B23001_065 + B23001_069 + B23001_072 + B23001_092 + B23001_095 + B23001_099 + B23001_102 +  B23001_106 + B23001_109 + B23001_113 + B23001_116 + B23001_120 + B23001_123 + B23001_127 + B23001_130 + B23001_134 + B23001_137 + B23001_141 + B23001_144 + B23001_148 + B23001_151 + B23001_155 + B23001_158),
+    RENT_P = B25003_003/B25003_001,
+    CROWD_P = (B25014_005 + B25014_006 + B25014_007 + B25014_011 + B25014_012 + B25014_013)/B25014_001,
+    SNGPNT_P  = (B11003_010 + B11003_016)/B11003_001,
+    NOVEH_P = (B25044_010 + B25044_003)/B25044_001,
+) %>%
+  dplyr::select(GEOID, NAME, ends_with("P"), B01001_001
+) %>%
+  dplyr::select(
+    everything()
+  )
+
+# Imputation by replacing NAs with 0
+colSums(is.na(RGC_SDI_2020_ZCTA)) # There are some NAs (between 58-675)
+RGC_SDI_2020_ZCTA[is.na(RGC_SDI_2020_ZCTA)] <- 0
+colSums(is.na(RGC_SDI_2020_ZCTA))
+RGC_SDI_2020_ZCTA_RawVars <- RGC_SDI_2020_ZCTA
+save(RGC_SDI_2020_ZCTA_RawVars, file = "RGC_SDI_2020_ZCTA_RawVars.RData")
+
+# Transforming the variables into percentiles
+SDI_short <- RGC_SDI_2020_ZCTA[, c("GEOID", "POV_P", "NOHSDP_P", "NONEMP_P", "RENT_P", "CROWD_P", "SNGPNT_P", "NOVEH_P")]
+rownames(SDI_short) <- SDI_short$GEOID
+SDI_short$GEOID <- NULL
+SDI_Scores <- as.data.frame(sapply(1:ncol(SDI_short), function(x){
+  var_score <- xtile(SDI_short[,x], n = 100, wt = RGC_SDI_2020_ZCTA$B01001_001)
+}))
+colnames(SDI_Scores) <- c("POV", "NOHSDP", "NONEMP", "RENT", "CROWD", "SNGPNT", "NOVEH")
+rownames(SDI_Scores) <- rownames(SDI_short)
+
+# Factor analysis on the percentile data via the principal factor solution method is performed with a one factor solution to produce the SDI score.
+sdi.fa <- fa(SDI_Scores, nfactors = 1, fm = "pa", weight = RGC_SDI_2020_ZCTA$B01001_001)
+
+# Saving the loadings
+RGC_SDI_Loadings <- as.data.frame(loadings(sdi.fa)[])
+colnames(RGC_SDI_Loadings) <- "ZCTA"
+RGC_SDI_Loadings$Vars <- rownames(RGC_SDI_Loadings)
+RGC_SDI_Loadings <- RGC_SDI_Loadings[,c("Vars", "ZCTA")]
+load("RGC_2020_SDI_Loadings.RData")
+RGC_2020_SDI_Loadings <- plyr::join(RGC_2020_SDI_Loadings, RGC_SDI_Loadings)
+save(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.RData")
+write.csv(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.csv")
+
+# Pulling the raw scores as the raw SDI, producing the SDI on a scale of 0-100
+RGC_SDI_2020_FA_SC <- as.data.frame(sdi.fa$scores)
+colnames(RGC_SDI_2020_FA_SC) <- c("SDI_2020_Raw")
+identical(rownames(RGC_SDI_2020_FA_SC), RGC_SDI_2020_ZCTA$GEOID)
+RGC_SDI_2020_FA_SC$SDI_2020 <- xtile(RGC_SDI_2020_FA_SC$SDI_2020_Raw, n = 100, wt = RGC_SDI_2020_ZCTA$B01001_001)
+RGC_SDI_2020_FA_SC$GEOID <- rownames(RGC_SDI_2020_FA_SC)
+RGC_SDI_2020_ZCTA <- plyr::join(RGC_SDI_2020_ZCTA, RGC_SDI_2020_FA_SC, by = "GEOID")
+save(RGC_SDI_2020_ZCTA, file = "RGC_SDI_2020_ZCTA.RData") # Final is 33,187
+write.csv(RGC_SDI_2020_ZCTA, file = "RGC_SDI_2020_ZCTA.csv")
+```
+
+### 3-ZCTA
+
+```{r}
+load("RGC_SDI_2020_ZCTA_Raw.RData")
+RGC_SDI_2020_ZCTA3_Raw <- RGC_SDI_2020_ZCTA_Raw
+RGC_SDI_2020_ZCTA3_Raw$ZIP3 <- substr(RGC_SDI_2020_ZCTA3_Raw$GEOID, 1, 3)
+length(unique(RGC_SDI_2020_ZCTA3_Raw$ZIP3))
+RGC_SDI_2020_ZCTA3_Raw <- RGC_SDI_2020_ZCTA3_Raw[, c(ncol(RGC_SDI_2020_ZCTA3_Raw), 3:(ncol(RGC_SDI_2020_ZCTA3_Raw)-1))]
+RGC_SDI_2020_ZCTA3_Raw <- RGC_SDI_2020_ZCTA3_Raw %>%
+  dplyr::group_by(ZIP3) %>%
+  dplyr::summarise(across(everything(), ~ sum(.x, na.rm = TRUE)))
+colnames(RGC_SDI_2020_ZCTA3_Raw)[1] <- "GEOID"
+save(RGC_SDI_2020_ZCTA3_Raw, file = "RGC_SDI_2020_ZCTA3_Raw.RData")
+
+# Producing the variables
+RGC_SDI_2020_ZCTA <- dplyr::mutate(RGC_SDI_2020_ZCTA3_Raw,
+    POV_P = (C17002_002 + C17002_003)/C17002_001,
+    NOHSDP_P = (B15003_002 + B15003_003 + B15003_004 + B15003_005 + B15003_006 + B15003_007 + B15003_008 + B15003_009 + B15003_010 + B15003_011 + B15003_012 + B15003_013 + B15003_014 + B15003_015 + B15003_016) /B15003_001,
+    NONEMP_P = (B23001_008 + B23001_009 + B23001_015 + B23001_016 + B23001_022 + B23001_023 + B23001_029 + B23001_030 + B23001_036 + B23001_037 + B23001_043 + B23001_044 + B23001_050 + B23001_051 + B23001_057 + B23001_058 + B23001_064 + B23001_065 + B23001_071 + B23001_072 + B23001_094 + B23001_095 + B23001_101 + B23001_102 + B23001_108 + B23001_109 + B23001_115 + B23001_116 + B23001_122 + B23001_123 + B23001_129 + B23001_130 + B23001_136 + B23001_137 + B23001_143 + B23001_144 + B23001_150 + B23001_151 + B23001_157 + B23001_158)/ (B23001_006 + B23001_009 +  B23001_013 +  B23001_016 + B23001_020 + B23001_023 +  B23001_027 + B23001_030 + B23001_034 +  B23001_037 +  B23001_041 + B23001_044 + B23001_048 + B23001_051 +  B23001_055 + B23001_058 + B23001_062 + B23001_065 + B23001_069 + B23001_072 + B23001_092 + B23001_095 + B23001_099 + B23001_102 +  B23001_106 + B23001_109 + B23001_113 + B23001_116 + B23001_120 + B23001_123 + B23001_127 + B23001_130 + B23001_134 + B23001_137 + B23001_141 + B23001_144 + B23001_148 + B23001_151 + B23001_155 + B23001_158),
+    RENT_P = B25003_003/B25003_001,
+    CROWD_P = (B25014_005 + B25014_006 + B25014_007 + B25014_011 + B25014_012 + B25014_013)/B25014_001,
+    SNGPNT_P  = (B11003_010 + B11003_016)/B11003_001,
+    NOVEH_P = (B25044_010 + B25044_003)/B25044_001,
+) %>%
+  dplyr::select(GEOID, ends_with("P"), B01001_001
+) %>%
+  dplyr::select(
+    everything()
+  )
+
+# Imputation by replacing NAs with 0
+colSums(is.na(RGC_SDI_2020_ZCTA)) # There are some NAs (between 58-675)
+RGC_SDI_2020_ZCTA[is.na(RGC_SDI_2020_ZCTA)] <- 0
+colSums(is.na(RGC_SDI_2020_ZCTA))
+RGC_SDI_2020_ZCTA3_RawVars <- RGC_SDI_2020_ZCTA
+save(RGC_SDI_2020_ZCTA3_RawVars, file = "RGC_SDI_2020_ZCTA3_RawVars.RData")
+
+# Transforming the variables into percentiles
+SDI_short <- as.data.frame(RGC_SDI_2020_ZCTA[, c("GEOID", "POV_P", "NOHSDP_P", "NONEMP_P", "RENT_P", "CROWD_P", "SNGPNT_P", "NOVEH_P")])
+rownames(SDI_short) <- SDI_short$GEOID
+SDI_short$GEOID <- NULL
+SDI_Scores <- as.data.frame(sapply(1:ncol(SDI_short), function(x){
+  var_score <- xtile(SDI_short[,x], n = 100, wt = RGC_SDI_2020_ZCTA$B01001_001)
+}))
+colnames(SDI_Scores) <- c("POV", "NOHSDP", "NONEMP", "RENT", "CROWD", "SNGPNT", "NOVEH")
+rownames(SDI_Scores) <- rownames(SDI_short)
+
+# Factor analysis on the percentile data via the principal factor solution method is performed with a one factor solution to produce the SDI score.
+sdi.fa <- fa(SDI_Scores, nfactors = 1, fm = "pa", weight = RGC_SDI_2020_ZCTA$B01001_001)
+
+# Saving the loadings
+RGC_SDI_Loadings <- as.data.frame(loadings(sdi.fa)[])
+colnames(RGC_SDI_Loadings) <- "ZCTA3"
+RGC_SDI_Loadings$Vars <- rownames(RGC_SDI_Loadings)
+RGC_SDI_Loadings <- RGC_SDI_Loadings[,c("Vars", "ZCTA3")]
+load("RGC_2020_SDI_Loadings.RData")
+RGC_2020_SDI_Loadings <- plyr::join(RGC_2020_SDI_Loadings, RGC_SDI_Loadings)
+save(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.RData")
+write.csv(RGC_2020_SDI_Loadings, file = "RGC_2020_SDI_Loadings.csv")
+
+# Pulling the raw scores as the raw SDI, producing the SDI on a scale of 0-100
+RGC_SDI_2020_FA_SC <- as.data.frame(sdi.fa$scores)
+colnames(RGC_SDI_2020_FA_SC) <- c("SDI_2020_Raw")
+identical(rownames(RGC_SDI_2020_FA_SC), RGC_SDI_2020_ZCTA$GEOID)
+RGC_SDI_2020_FA_SC$SDI_2020 <- xtile(RGC_SDI_2020_FA_SC$SDI_2020_Raw, n = 100, wt = RGC_SDI_2020_ZCTA$B01001_001)
+RGC_SDI_2020_FA_SC$GEOID <- rownames(RGC_SDI_2020_FA_SC)
+RGC_SDI_2020_ZCTA <- plyr::join(RGC_SDI_2020_ZCTA, RGC_SDI_2020_FA_SC, by = "GEOID")
+RGC_SDI_2020_ZCTA3 <- RGC_SDI_2020_ZCTA
+save(RGC_SDI_2020_ZCTA3, file = "RGC_SDI_2020_ZCTA3.RData") # Final is 889
+write.csv(RGC_SDI_2020_ZCTA3, file = "RGC_SDI_2020_ZCTA3.csv")
+```
+
